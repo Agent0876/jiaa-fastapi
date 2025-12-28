@@ -4,7 +4,8 @@
 
 ```bash
 cd ai-chat-service
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+
 ```
 
 ## 📋 테스트 방법
