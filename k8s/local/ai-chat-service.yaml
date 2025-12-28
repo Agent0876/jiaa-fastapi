@@ -40,6 +40,8 @@ spec:
             secretKeyRef:
               name: aws-credentials
               key: AWS_SECRET_ACCESS_KEY
+        - name: JWT_SECRET
+          value: "your-jwt-secret-key"
         resources:
           requests:
             memory: "256Mi"

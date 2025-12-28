@@ -1,150 +1,92 @@
 import os
-from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, ForeignKey, Float, TypeDecorator
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from typing import Optional, List, Dict
 from datetime import datetime
+from pymongo import AsyncMongoClient
+from pymongo.collection import Collection
+from pymongo.database import Database
+import asyncio
 
-Base = declarative_base()
+# MongoDB 연결 정보 (환경 변수에서 가져오거나 기본값 사용)
+MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
+MONGO_PORT = int(os.getenv("MONGO_PORT", "27017"))
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "jiwon")
+MONGO_USER = os.getenv("MONGO_USER", "")
+MONGO_PASSWORD = os.getenv("MONGO_PASSWORD", "")
 
+# MongoDB 연결 문자열 생성
+if MONGO_USER and MONGO_PASSWORD:
+    MONGO_URI = f"mongodb://{MONGO_USER}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/{MONGO_DB_NAME}?authSource=admin"
+else:
+    MONGO_URI = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/{MONGO_DB_NAME}"
 
-class Vector(TypeDecorator):
-    """pgvector vector 타입을 위한 SQLAlchemy 타입"""
-    impl = ARRAY(Float)
-    cache_ok = True
-    
-    def load_dialect_impl(self, dialect):
-        # PostgreSQL에서 vector 타입 사용
-        if dialect.name == 'postgresql':
-            # 실제로는 ARRAY를 사용하되, SQL에서 vector로 변환
-            return dialect.type_descriptor(ARRAY(Float))
-        return dialect.type_descriptor(ARRAY(Float))
-
-# PostgreSQL 연결 정보 (환경 변수에서 가져오거나 기본값 사용)
-# 로컬 개발 환경에서는 localhost를 사용, 프로덕션에서는 환경 변수 사용
-DB_HOST = os.getenv("DB_HOST", "localhost")
-# 환경 변수가 "postgres"로 설정되어 있으면 localhost로 변경 (로컬 개발용)
-if DB_HOST == "postgres" and os.getenv("ENV") != "production":
-    DB_HOST = "localhost"
-
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "jiwon")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
-
-# PostgreSQL 연결 문자열 생성
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-# PostgreSQL 엔진 생성
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
-
-# 세션 생성
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# MongoDB 클라이언트 (전역)
+_client: Optional[AsyncMongoClient] = None
+_db: Optional[Database] = None
 
 
-class Personality(Base):
-    """성격 캐릭터 모델"""
-    __tablename__ = "personalities"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False, index=True)
-    description = Column(Text)
-    system_prompt = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+async def get_client() -> AsyncMongoClient:
+    """MongoDB 클라이언트 가져오기 (싱글톤)"""
+    global _client
+    if _client is None:
+        _client = AsyncMongoClient(MONGO_URI)
+        print(f"✅ MongoDB 클라이언트 연결 완료: {MONGO_URI}")
+    return _client
 
 
-class SessionConfig(Base):
-    """세션별 설정 모델"""
-    __tablename__ = "session_configs"
-    
-    session_id = Column(String, primary_key=True, index=True)
-    # user_id는 users 테이블과의 외래키 관계를 애플리케이션 레벨에서 관리
-    # ForeignKey 제약 조건은 데이터베이스에 이미 존재할 수 있으므로 여기서는 정의하지 않음
-    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    personality_id = Column(Integer, ForeignKey("personalities.id"), nullable=True)
-    mode = Column(String, default="chat")  # "chat" or "roadmap"
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    personality = relationship("Personality")
+async def get_database() -> Database:
+    """MongoDB 데이터베이스 가져오기"""
+    global _db
+    if _db is None:
+        client = await get_client()
+        _db = client[MONGO_DB_NAME]
+    return _db
 
 
-class ConversationMessage(Base):
-    """대화 메시지 벡터 저장 모델"""
-    __tablename__ = "conversation_messages"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String, nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    role = Column(String, nullable=False)  # "user" or "assistant"
-    content = Column(Text, nullable=False)
-    embedding = Column(Vector, nullable=True)  # 벡터 임베딩 (pgvector vector 타입)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    
-    # 벡터 검색을 위한 인덱스는 pgvector가 있을 때만 생성
+async def get_collection(collection_name: str) -> Collection:
+    """컬렉션 가져오기"""
+    db = await get_database()
+    return db[collection_name]
 
 
-def init_db():
+async def init_db():
     """데이터베이스 초기화 및 기본 데이터 삽입"""
-    # pgvector 확장 시도 (없어도 계속 진행)
     try:
-        with engine.connect() as conn:
-            from sqlalchemy import text
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            conn.commit()
-            print("✅ pgvector 확장 활성화 완료")
-    except Exception as e:
-        print(f"⚠️ pgvector 확장 없음 (ARRAY로 대체): {e}")
-    
-    # 테이블 생성
-    Base.metadata.create_all(bind=engine)
-    
-    # 기존 ARRAY 타입을 vector 타입으로 마이그레이션
-    try:
-        with engine.connect() as conn:
-            from sqlalchemy import text
-            # embedding 컬럼 타입 확인
-            result = conn.execute(text("""
-                SELECT data_type 
-                FROM information_schema.columns 
-                WHERE table_name = 'conversation_messages' 
-                AND column_name = 'embedding'
-            """))
-            row = result.fetchone()
-            
-            if row and 'array' in row[0].lower():
-                # ARRAY를 vector로 변환 (Titan Embeddings는 1536 차원)
-                print("🔄 ARRAY 타입을 vector 타입으로 마이그레이션 중...")
-                conn.execute(text("""
-                    ALTER TABLE conversation_messages 
-                    ALTER COLUMN embedding TYPE vector(1536) 
-                    USING embedding::vector
-                """))
-                conn.commit()
-                print("✅ embedding 컬럼을 vector 타입으로 변경 완료")
-            
-            # 기존 인덱스 삭제 후 재생성
-            conn.execute(text("""
-                DROP INDEX IF EXISTS conversation_messages_embedding_idx
-            """))
-            
-            # 벡터 인덱스 생성 (pgvector가 있을 때만)
-            conn.execute(text("""
-                CREATE INDEX conversation_messages_embedding_idx 
-                ON conversation_messages 
-                USING ivfflat (embedding vector_cosine_ops)
-                WITH (lists = 100)
-            """))
-            conn.commit()
-            print("✅ 벡터 인덱스 생성 완료")
-    except Exception as e:
-        # pgvector가 없거나 이미 vector 타입이면 무시
-        print(f"⚠️ 벡터 타입 마이그레이션/인덱스 생성 중 오류 (무시 가능): {e}")
-    
-    db = SessionLocal()
-    try:
+        db = await get_database()
+        
+        # 컬렉션 인덱스 생성
+        # conversation_messages 컬렉션 인덱스
+        conversation_messages = await get_collection("conversation_messages")
+        await conversation_messages.create_index("session_id")
+        await conversation_messages.create_index("user_id")
+        await conversation_messages.create_index("created_at")
+        
+        # 벡터 검색 인덱스는 별도 스크립트(create_vector_index.py)로 생성
+        # 또는 MongoDB 6.0.11+에서 자동 생성 시도
+        print("ℹ️ 벡터 검색 인덱스는 'python create_vector_index.py'로 생성하세요.")
+        
+        print("✅ conversation_messages 인덱스 생성 완료")
+        
+        # session_configs 컬렉션 인덱스
+        session_configs = await get_collection("session_configs")
+        await session_configs.create_index("session_id", unique=True)
+        await session_configs.create_index("user_id")
+        print("✅ session_configs 인덱스 생성 완료")
+        
+        # roadmaps 컬렉션 인덱스
+        roadmaps = await get_collection("roadmaps")
+        await roadmaps.create_index("user_id")
+        await roadmaps.create_index("session_id")
+        await roadmaps.create_index("created_at")
+        print("✅ roadmaps 인덱스 생성 완료")
+        
+        # personalities 컬렉션 인덱스 및 기본 데이터
+        personalities = await get_collection("personalities")
+        await personalities.create_index("name", unique=True)
+        
         # 이미 데이터가 있는지 확인
-        if db.query(Personality).count() > 0:
+        count = await personalities.count_documents({})
+        if count > 0:
+            print("ℹ️ personalities 데이터가 이미 존재합니다.")
             return
         
         # 로드맵 프롬프트
@@ -174,14 +116,26 @@ def init_db():
 
 # Output Format (JSON Only)
 {
+  "name": "로드맵 전체 이름 (사용자가 설정한 [A] 총목표를 기반으로 생성)",
   "roadmap": [
     {
-      "day": number,
+      "day": 1,
+      "content": "해당 일차에 수행할 PC 기반 학습 내용",
+      "time": "사용자가 확정한 [D] 값",
+      "timestamp": "ISO 8601 형식의 날짜/시간 (예: 2025-01-01T00:00:00Z)"
+    },
+    {
+      "day": 2,
       "content": "해당 일차에 수행할 PC 기반 학습 내용",
       "time": "사용자가 확정한 [D] 값"
     }
   ]
 }
+
+**중요**: 
+- "name" 필드는 반드시 포함되어야 하며, 사용자가 설정한 총목표([A])를 기반으로 로드맵의 전체 이름을 생성합니다.
+- "timestamp" 필드는 첫 번째 항목(day: 1)에만 포함되며, 로드맵 시작 날짜를 ISO 8601 형식으로 표시합니다.
+- day 2부터는 timestamp 필드를 포함하지 않습니다.
 
 # Instruction to Start
 가장 먼저 [A] 총목표를 묻는 질문부터 시작하세요."""
@@ -334,52 +288,56 @@ def init_db():
 예: '이와 관련하여 ~에 대해서도 궁금하시다면 말씀해 주세요.'"""
         
         # 성격 캐릭터 데이터 삽입
-        personalities = [
-            Personality(
-                name="베타인",
-                description="상냥하고 사려 깊은 여자 캐릭터",
-                system_prompt=betain_prompt
-            ),
-            Personality(
-                name="알파인",
-                description="까칠한 소꿉친구 매스가키 캐릭터",
-                system_prompt=alpain_prompt
-            ),
-            Personality(
-                name="클레맨타인",
-                description="정보 전문가 캐릭터",
-                system_prompt=clementine_prompt
-            ),
+        personalities_data = [
+            {
+                "name": "베타인",
+                "description": "상냥하고 사려 깊은 여자 캐릭터",
+                "system_prompt": betain_prompt,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "알파인",
+                "description": "까칠한 소꿉친구 매스가키 캐릭터",
+                "system_prompt": alpain_prompt,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "클레맨타인",
+                "description": "정보 전문가 캐릭터",
+                "system_prompt": clementine_prompt,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
         ]
         
-        for personality in personalities:
-            db.add(personality)
+        await personalities.insert_many(personalities_data)
+        print("✅ personalities 기본 데이터 삽입 완료")
         
-        db.commit()
     except Exception as e:
-        db.rollback()
-        raise e
-    finally:
-        db.close()
-
-
-def get_db():
-    """데이터베이스 세션 생성"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-if __name__ == "__main__":
-    """직접 실행 시 데이터베이스 초기화"""
-    print("데이터베이스 초기화 중...")
-    try:
-        init_db()
-        print("✅ 데이터베이스 초기화 완료!")
-    except Exception as e:
-        print(f"❌ 오류 발생: {e}")
+        print(f"❌ 데이터베이스 초기화 중 오류: {e}")
         import traceback
         traceback.print_exc()
+        raise
 
+
+async def close_db():
+    """MongoDB 연결 종료"""
+    global _client, _db
+    if _client:
+        _client.close()
+        _client = None
+        _db = None
+        print("✅ MongoDB 연결 종료")
+
+
+# 동기 함수 래퍼 (기존 코드 호환성)
+def run_async(coro):
+    """비동기 함수를 동기적으로 실행"""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
