@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 from app.db.mongodb import get_collection
 from app.db.vector import vector_store, embeddings
 from app.services.session import get_session_config
-from app.core.prompts import ROADMAP_QA_SYSTEM_PROMPT
+from app.core.prompts import ROADMAP_QA_SYSTEM_PROMPT, ROADMAP_SYSTEM_PROMPT
 
 def generate_embedding(text: str) -> Optional[List[float]]:
     """텍스트를 벡터 임베딩으로 변환 (LangChain 사용)"""
@@ -256,8 +256,11 @@ async def get_system_prompt(session_id: str, rag_context: str = "") -> str:
     
     # 로드맵 모드인 경우
     if config and config.get("mode") == "roadmap":
-        return ROADMAP_QA_SYSTEM_PROMPT
+        return ROADMAP_SYSTEM_PROMPT
     
+    if config and config.get("mode") == "qa":
+        return ROADMAP_QA_SYSTEM_PROMPT
+
     # 성격이 선택된 경우
     base_prompt = None
     if config and config.get("personality_id"):

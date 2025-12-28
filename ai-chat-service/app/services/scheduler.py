@@ -7,25 +7,26 @@ from app.db.mongodb import get_collection
 from app.services.roadmap import generate_day_details
 
 async def generate_all_today_details():
-    """모든 활성 로드맵의 오늘 일차 상세 생성"""
+    """모든 활성 로드맵의 오늘 일차 상세 생성 (병렬 처리)"""
     try:
         roadmaps = await get_collection("roadmaps")
         cursor = roadmaps.find({})
         roadmap_list = await cursor.to_list(length=None)
         
-        print(f"📋 [Scheduler] {len(roadmap_list)}개 로드맵 처리 시작...")
+        print(f"📋 [Scheduler] {len(roadmap_list)}개 로드맵 병렬 처리 시작...")
         
-        for roadmap in roadmap_list:
+        # 각 로드맵에 대한 상세 생성 태스크 준비
+        async def process_roadmap(roadmap):
             try:
                 roadmap_id = str(roadmap.get("_id"))
                 items = roadmap.get("items", [])
                 if not items:
-                    continue
+                    return None
                 
                 # 시작일 기준 오늘 일차 계산
                 start_date = items[0].get("created_at")
                 if not start_date:
-                    continue
+                    return None
                 
                 today = datetime.utcnow()
                 days_diff = (today - start_date).days + 1
@@ -34,13 +35,27 @@ async def generate_all_today_details():
                 if 1 <= days_diff <= len(items):
                     goal = roadmap.get("name", "학습")
                     await generate_day_details(roadmap_id, days_diff, goal)
-                    print(f"✅ [Scheduler] {roadmap.get('name')} - Day {days_diff} 상세 생성 완료")
-                    
+                    return f"✅ {roadmap.get('name')} - Day {days_diff}"
+                return None
             except Exception as e:
-                print(f"⚠️ [Scheduler] 로드맵 처리 오류: {e}")
-                continue
+                return f"⚠️ {roadmap.get('name', 'Unknown')} 오류: {e}"
         
-        print(f"🎉 [Scheduler] 모든 로드맵 상세 생성 완료")
+        # 모든 로드맵 병렬 실행
+        tasks = [process_roadmap(roadmap) for roadmap in roadmap_list]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 결과 출력
+        success_count = 0
+        for result in results:
+            if result:
+                if isinstance(result, str):
+                    print(f"[Scheduler] {result}")
+                    if result.startswith("✅"):
+                        success_count += 1
+                elif isinstance(result, Exception):
+                    print(f"[Scheduler] ❌ Exception: {result}")
+        
+        print(f"🎉 [Scheduler] 완료 - {success_count}/{len(roadmap_list)}개 로드맵 상세 생성")
         
     except Exception as e:
         print(f"❌ [Scheduler] 전체 상세 생성 오류: {e}")
