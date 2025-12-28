@@ -50,7 +50,7 @@ async def test_websocket():
             
     except websockets.exceptions.ConnectionRefused:
         print(f"❌ 연결 실패: 서버가 실행 중이지 않습니다. {uri}")
-        print("   서버를 먼저 실행하세요: uvicorn main:app --reload")
+        print("   uvicorn app.main:app --reload")
         sys.exit(1)
     except Exception as e:
         print(f"❌ 오류 발생: {e}")
