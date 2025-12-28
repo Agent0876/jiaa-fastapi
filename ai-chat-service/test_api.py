@@ -107,7 +107,7 @@ def main():
     # 기본 테스트
     if not test_health():
         print("❌ 서버가 실행 중이 아닙니다. 먼저 서버를 시작하세요:")
-        print("   uvicorn main:app --host 0.0.0.0 --port 8000 --reload")
+        print("   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload")
         return
     
     test_root()
@@ -138,7 +138,7 @@ def main():
     print("\n💡 추가 테스트:")
     print(f"   - 브라우저에서 API 문서 확인: {BASE_URL}/docs")
     print(f"   - 대체 문서: {BASE_URL}/redoc")
-    print(f"   - WebSocket 테스트: ws://localhost:8000/ws")
+    print(f"   - WebSocket 테스트: ws://localhost:8000/ws/chat")
 
 if __name__ == "__main__":
     try:
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     except requests.exceptions.ConnectionError:
         print("❌ 서버에 연결할 수 없습니다.")
         print("   서버가 실행 중인지 확인하세요:")
-        print("   uvicorn main:app --host 0.0.0.0 --port 8000 --reload")
+        print("   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload")
     except Exception as e:
         print(f"❌ 오류 발생: {e}")
         import traceback
