@@ -33,8 +33,8 @@ class Settings:
     ROADMAP_MODEL_ID: str = "anthropic.claude-3-5-sonnet-20240620-v1:0"
     
     # Embedding
-    # jhgan/ko-sroberta-multitask: 한국어 RAG에 최적화된 모델 (768 차원)
-    EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "jhgan/ko-sroberta-multitask")
-    EMBEDDING_DIMENSION: int = 768
+    # AWS Bedrock Titan Embedding v2 모델 (1536 차원)
+    EMBEDDING_MODEL_ID: str = "amazon.titan-embed-text-v2:0"
+    EMBEDDING_DIMENSION: int = 1024  # Titan Embedding v2의 차원
 
 settings = Settings()
