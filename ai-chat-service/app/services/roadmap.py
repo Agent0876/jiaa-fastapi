@@ -200,10 +200,51 @@ async def generate_task_details(
         response_text = re.sub(r'//.*?$', '', response_text, flags=re.MULTILINE)
         json_match = re.search(r'\{[\s\S]*"details"[\s\S]*\}', response_text)
         if json_match:
-            detail_data = json.loads(json_match.group(0))
-            details = detail_data.get("details", {})
-            print(f"✅ [TaskDetail] Day {day} - '{task_content}' 상세 생성 완료")
-            return details
+            json_str = json_match.group(0)
+            
+            # 제어 문자 처리: JSON 문자열 내부의 제어 문자를 제거하거나 이스케이프
+            # 방법 1: 제어 문자를 공백으로 치환 (더 안전)
+            def remove_control_chars(text):
+                result = []
+                i = 0
+                while i < len(text):
+                    char = text[i]
+                    # 이스케이프 시퀀스는 건너뛰기 (\\, \", \n 등)
+                    if char == '\\' and i + 1 < len(text):
+                        result.append(char)
+                        result.append(text[i + 1])
+                        i += 2
+                        continue
+                    # 인쇄 가능한 문자 또는 허용된 공백 문자만 유지
+                    if char.isprintable() or char in '\n\r\t':
+                        result.append(char)
+                    else:
+                        # 제어 문자는 공백으로 치환
+                        result.append(' ')
+                    i += 1
+                return ''.join(result)
+            
+            json_str_clean = remove_control_chars(json_str)
+            
+            try:
+                detail_data = json.loads(json_str_clean)
+                details = detail_data.get("details", {})
+                print(f"✅ [TaskDetail] Day {day} - '{task_content}' 상세 생성 완료")
+                return details
+            except json.JSONDecodeError as json_err:
+                # JSON 파싱 실패 시 더 단순한 방법 시도
+                try:
+                    # 모든 제어 문자 제거 (더 공격적인 정리)
+                    json_str_final = ''.join(char if (32 <= ord(char) <= 126 or char in ' \n\r\t') else ' ' for char in json_str)
+                    # 연속된 공백 정리
+                    json_str_final = re.sub(r'  +', ' ', json_str_final)
+                    detail_data = json.loads(json_str_final)
+                    details = detail_data.get("details", {})
+                    print(f"✅ [TaskDetail] Day {day} - '{task_content}' 상세 생성 완료 (정리 후)")
+                    return details
+                except Exception as final_err:
+                    print(f"❌ [TaskDetail] JSON 파싱 실패: {json_err}")
+                    return None
         return None
     except Exception as e:
         print(f"❌ [TaskDetail] 상세 생성 오류: {e}")
