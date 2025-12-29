@@ -10,7 +10,7 @@ from app.models.roadmap import (
     RoadmapResponse,
     UpdateRoadmapItemRequest
 )
-from app.services.roadmap import generate_day_details
+from app.services.roadmap import generate_day_details, extract_and_save_keywords
 
 router = APIRouter()
 
@@ -305,3 +305,30 @@ async def update_roadmap_item(roadmap_item_id: str, request: UpdateRoadmapItemRe
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"로드맵 항목 업데이트 중 오류 발생: {str(e)}")
+
+
+@router.post("/{roadmap_id}/extract-keywords")
+async def extract_keywords_for_roadmap(roadmap_id: str):
+    """기존 로드맵에 대해 키워드 추출 및 통계 업데이트"""
+    try:
+        roadmaps_collection = await get_collection("roadmaps")
+        
+        try:
+            object_id = ObjectId(roadmap_id)
+            roadmap = await roadmaps_collection.find_one({"_id": object_id})
+        except (InvalidId, ValueError, TypeError):
+            roadmap = await roadmaps_collection.find_one({"_id": roadmap_id})
+        
+        if not roadmap:
+            raise HTTPException(status_code=404, detail="로드맵을 찾을 수 없습니다")
+        
+        user_id = roadmap.get("user_id")
+        
+        # 키워드 추출 및 저장
+        await extract_and_save_keywords(roadmap, user_id)
+        
+        return {"status": "success", "message": "키워드 추출 및 저장 완료"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"키워드 추출 중 오류 발생: {str(e)}")
