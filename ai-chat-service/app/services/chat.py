@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime
 from typing import List, Dict, Optional
+import numpy as np
 
 from app.db.mongodb import get_collection
 from app.db.vector import vector_store, embeddings
@@ -168,18 +169,124 @@ async def get_conversation_by_session(session_id: str) -> Optional[Dict]:
 # 런타임 플래그: 벡터 검색 가능 여부
 # 로컬 MongoDB 등 $vectorSearch를 지원하지 않는 환경에서 에러 로그 스팸 방지
 VECTOR_SEARCH_AVAILABLE = True
+USE_FALLBACK_SEARCH = False  # 로컬 폴백 검색 사용 여부
 
-def search_similar_messages(query: str, user_id: Optional[str] = None, limit: int = 5) -> List[Dict]:
-    """LangChain Vector Store에서 유사한 메시지 검색"""
-    global VECTOR_SEARCH_AVAILABLE
+def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """두 벡터 간의 코사인 유사도 계산"""
+    try:
+        vec1_array = np.array(vec1)
+        vec2_array = np.array(vec2)
+        
+        # 차원 불일치 체크
+        if len(vec1_array) != len(vec2_array):
+            # 차원이 다른 경우 0 반환 (조용히 처리)
+            return 0.0
+        
+        # 정규화
+        norm1 = np.linalg.norm(vec1_array)
+        norm2 = np.linalg.norm(vec2_array)
+        
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        
+        dot_product = np.dot(vec1_array, vec2_array)
+        return float(dot_product / (norm1 * norm2))
+    except Exception as e:
+        # 차원 불일치 등 에러는 조용히 0 반환
+        return 0.0
+
+
+async def search_similar_messages_fallback(query: str, user_id: Optional[str] = None, limit: int = 5) -> List[Dict]:
+    """로컬 MongoDB에서 애플리케이션 레벨 벡터 검색 (폴백)"""
+    try:
+        if embeddings is None:
+            return []
+        
+        # 쿼리 텍스트의 임베딩 생성
+        loop = asyncio.get_event_loop()
+        query_embedding = await loop.run_in_executor(
+            None,
+            embeddings.embed_query,
+            query
+        )
+        
+        if not query_embedding:
+            return []
+        
+        # MongoDB에서 embedding이 있는 메시지 조회
+        conversation_messages = await get_collection("conversation_messages")
+        
+        # 필터 조건 생성
+        filter_dict = {"embedding": {"$exists": True, "$ne": None}}
+        if user_id:
+            filter_dict["user_id"] = user_id
+        
+        # 모든 메시지 조회 (embedding이 있는 것만)
+        cursor = conversation_messages.find(filter_dict)
+        messages = await cursor.to_list(length=10000)  # 최대 10000개 (성능 고려)
+        
+        if not messages:
+            return []
+        
+        # 각 메시지와 쿼리의 코사인 유사도 계산
+        similarities = []
+        query_dim = len(query_embedding)
+        skipped_count = 0
+        
+        for msg in messages:
+            msg_embedding = msg.get("embedding")
+            if not msg_embedding or not isinstance(msg_embedding, list):
+                continue
+            
+            # 차원 불일치 체크 (다른 모델로 생성된 임베딩 스킵)
+            if len(msg_embedding) != query_dim:
+                skipped_count += 1
+                continue
+            
+            similarity = cosine_similarity(query_embedding, msg_embedding)
+            if similarity > 0:  # 유효한 유사도만 추가
+                similarities.append({
+                    "content": msg.get("content", ""),
+                    "role": msg.get("role", ""),
+                    "session_id": msg.get("session_id", ""),
+                    "user_id": msg.get("user_id", ""),
+                    "similarity": similarity,
+                    "created_at": msg.get("created_at")
+                })
+        
+        if skipped_count > 0:
+            print(f"ℹ️ {skipped_count}개의 메시지는 다른 임베딩 모델로 생성되어 검색에서 제외되었습니다.")
+        
+        # 유사도가 높은 순으로 정렬하고 상위 N개 반환
+        similarities.sort(key=lambda x: x["similarity"], reverse=True)
+        return similarities[:limit]
+        
+    except Exception as e:
+        print(f"⚠️ 폴백 벡터 검색 실패: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+async def search_similar_messages(query: str, user_id: Optional[str] = None, limit: int = 5) -> List[Dict]:
+    """LangChain Vector Store에서 유사한 메시지 검색 (Atlas 지원 시) 또는 폴백 검색"""
+    global VECTOR_SEARCH_AVAILABLE, USE_FALLBACK_SEARCH
+    
+    # 폴백 검색을 사용하는 경우
+    if USE_FALLBACK_SEARCH:
+        return await search_similar_messages_fallback(query, user_id, limit)
     
     if not VECTOR_SEARCH_AVAILABLE:
-        return []
+        # VECTOR_SEARCH_AVAILABLE이 False면 폴백 검색 사용
+        USE_FALLBACK_SEARCH = True
+        return await search_similar_messages_fallback(query, user_id, limit)
 
     try:
         if vector_store is None:
-            # 초기화 실패는 조용히 무시 (이미 로그 출력됨)
-            return []
+            # 초기화 실패 시 폴백 검색 시도
+            USE_FALLBACK_SEARCH = True
+            print("ℹ️ Vector Store가 없습니다. 폴백 검색을 사용합니다.")
+            return await search_similar_messages_fallback(query, user_id, limit)
         
         # 필터 조건 생성 (user_id가 있을 때만)
         filter_dict = None
@@ -187,10 +294,15 @@ def search_similar_messages(query: str, user_id: Optional[str] = None, limit: in
             filter_dict = {"user_id": user_id}
         
         # 유사도 검색 (with_score=True로 점수도 반환)
-        results = vector_store.similarity_search_with_score(
-            query=query,
-            k=limit,
-            pre_filter=filter_dict
+        # LangChain Vector Store의 similarity_search_with_score는 동기 함수
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(
+            None,
+            lambda: vector_store.similarity_search_with_score(
+                query=query,
+                k=limit,
+                pre_filter=filter_dict
+            )
         )
         
         # 결과 포맷팅
@@ -209,18 +321,23 @@ def search_similar_messages(query: str, user_id: Optional[str] = None, limit: in
     except Exception as e:
         error_msg = str(e)
         if "$vectorSearch" in error_msg:
-            print(f"⚠️ 로컬 MongoDB는 Atlas Vector Search를 지원하지 않습니다. RAG 기능이 비활성화됩니다.")
+            print(f"ℹ️ 로컬 MongoDB는 Atlas Vector Search를 지원하지 않습니다. 폴백 검색을 사용합니다.")
             VECTOR_SEARCH_AVAILABLE = False
+            USE_FALLBACK_SEARCH = True
+            # 폴백 검색 시도
+            return await search_similar_messages_fallback(query, user_id, limit)
         else:
             print(f"⚠️ Vector 검색 실패: {e}")
-        return []
+            # 실패 시에도 폴백 검색 시도
+            USE_FALLBACK_SEARCH = True
+            return await search_similar_messages_fallback(query, user_id, limit)
 
 
 async def get_rag_context(query: str, session_id: str, user_id: Optional[str] = None, limit: int = 5) -> str:
     """RAG를 위한 관련 대화 컨텍스트 가져오기 (LangChain Vector Search 사용)"""
     try:
         # LangChain Vector Store로 유사 메시지 검색
-        similar_messages = search_similar_messages(
+        similar_messages = await search_similar_messages(
             query=query,
             user_id=user_id,
             limit=limit

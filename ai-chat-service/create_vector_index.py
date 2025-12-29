@@ -53,7 +53,7 @@ def create_vector_index():
                             "fields": {
                                 "embedding": {
                                     "type": "knnVector",
-                                    "dimensions": 768,  # ko-sroberta-multitask 모델의 차원
+                                    "dimensions": 1536,  # AWS Bedrock Titan Embedding v2의 차원
                                     "similarity": "cosine"
                                 }
                             }
@@ -66,7 +66,7 @@ def create_vector_index():
         print(f"✅ 벡터 인덱스 생성 완료!")
         print(f"   인덱스 ID: {result.get('id', 'N/A')}")
         print(f"   인덱스 이름: vector_index")
-        print(f"   차원: 768 (ko-sroberta-multitask)")
+        print(f"   차원: 1536 (AWS Bedrock Titan Embedding v2)")
         print(f"   유사도: cosine")
         print("\n💡 인덱스가 활성화되기까지 몇 초 걸릴 수 있습니다.")
         

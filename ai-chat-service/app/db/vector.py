@@ -1,18 +1,26 @@
 
 from pymongo import MongoClient
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_aws import BedrockEmbeddings
 from langchain_mongodb import MongoDBAtlasVectorSearch
 from app.core.config import settings
+import boto3
 
-# LangChain HuggingFace 임베딩 초기화
+# AWS Bedrock 클라이언트 초기화
+bedrock_client = boto3.client(
+    service_name="bedrock-runtime",
+    region_name=settings.AWS_REGION,
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+)
+
+# LangChain Bedrock 임베딩 초기화
 embeddings = None
 try:
-    embeddings = HuggingFaceEmbeddings(
-        model_name=settings.EMBEDDING_MODEL_NAME,
-        model_kwargs={'device': 'cpu'},  # GPU가 있으면 'cuda'로 변경 가능
-        encode_kwargs={'normalize_embeddings': True}  # 정규화하여 코사인 유사도 최적화
+    embeddings = BedrockEmbeddings(
+        client=bedrock_client,
+        model_id=settings.EMBEDDING_MODEL_ID,
     )
-    print(f"✅ LangChain 임베딩 모델 로드 완료: {settings.EMBEDDING_MODEL_NAME}")
+    print(f"✅ LangChain Bedrock 임베딩 모델 로드 완료: {settings.EMBEDDING_MODEL_ID}")
 except Exception as e:
     print(f"⚠️ 임베딩 모델 로드 실패: {e}")
     embeddings = None
