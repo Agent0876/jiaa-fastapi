@@ -13,7 +13,7 @@ Docker 이미지를 빌드합니다.
 
 # 특정 서비스 빌드
 ./scripts/build-local.sh ai-chat-service
-./scripts/build-local.sh ai-vision-service
+./scripts/build-local.sh ai-judge-service
 
 # 커스텀 태그 지정
 ./scripts/build-local.sh ai-chat-service v1.0.0
@@ -104,8 +104,8 @@ export AWS_REGION=us-east-1
 모든 Kubernetes 배포 매니페스트는 `k8s/` 폴더에 저장되어 있습니다:
 - `k8s/ai-chat-service/deployment.yaml` - ai-chat-service Deployment
 - `k8s/ai-chat-service/service.yaml` - ai-chat-service Service
-- `k8s/ai-vision-service/deployment.yaml` - ai-vision-service Deployment
-- `k8s/ai-vision-service/service.yaml` - ai-vision-service Service
+- `k8s/ai-judge-service/deployment.yaml` - ai-judge-service Deployment
+- `k8s/ai-judge-service/service.yaml` - ai-judge-service Service
 
 자세한 내용은 [k8s/README.md](../k8s/README.md)를 참조하세요.
 

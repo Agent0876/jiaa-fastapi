@@ -23,3 +23,8 @@ class SearchRequest(BaseModel):
     query: str
     user_id: Optional[str] = None  # UUID 문자열
     limit: Optional[int] = 5
+
+
+class SaveMessageRequest(BaseModel):
+    role: str
+    content: str

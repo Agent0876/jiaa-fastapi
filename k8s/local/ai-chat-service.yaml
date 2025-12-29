@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jiaa-ai-chat-service
-  namespace: jiwon-tech
+  namespace: jiaa-backend
   labels:
     app: jiaa-ai-chat-service
     service: ai-chat-service
@@ -22,12 +22,26 @@ spec:
         image: jiaa-ai-chat-service:local
         imagePullPolicy: Never
         ports:
-        - containerPort: 8000
+        - containerPort: 8080
           name: http
           protocol: TCP
         env:
         - name: ENV
           value: "local"
+        - name: PORT
+          value: "8080"
+        - name: EUREKA_SERVER
+          value: "http://discovery-service:8761/eureka"
+        - name: EUREKA_APP_NAME
+          value: "ai-chat-service"
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         - name: AWS_REGION
           value: "us-east-1"
         - name: AWS_ACCESS_KEY_ID
@@ -42,6 +56,33 @@ spec:
               key: AWS_SECRET_ACCESS_KEY
         - name: JWT_SECRET
           value: "your-jwt-secret-key"
+        # MongoDB 연결 설정
+        - name: MONGO_HOST
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: MONGO_HOST
+        - name: MONGO_PORT
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: MONGO_PORT
+        - name: MONGO_DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: MONGO_DB_NAME
+        # MongoDB 인증 (필요한 경우 주석 해제)
+        # - name: MONGO_USER
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: mongodb-credentials
+        #       key: MONGO_USER
+        # - name: MONGO_PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: mongodb-credentials
+        #       key: MONGO_PASSWORD
         resources:
           requests:
             memory: "256Mi"
@@ -52,13 +93,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
           initialDelaySeconds: 10
           periodSeconds: 5
 ---
@@ -66,15 +107,15 @@ apiVersion: v1
 kind: Service
 metadata:
   name: jiaa-ai-chat-service-svc
-  namespace: jiwon-tech
+  namespace: jiaa-backend
   labels:
     app: jiaa-ai-chat-service
     service: ai-chat-service
 spec:
   type: ClusterIP
   ports:
-  - port: 8000
-    targetPort: 8000
+  - port: 8080
+    targetPort: 8080
     protocol: TCP
     name: http
   selector:

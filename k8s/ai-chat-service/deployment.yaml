@@ -21,12 +21,26 @@ spec:
         image: jiaa-ai-chat-service:local
         imagePullPolicy: Never
         ports:
-        - containerPort: 8000
+        - containerPort: 8080
           name: http
           protocol: TCP
         env:
         - name: ENV
           value: "local"
+        - name: PORT
+          value: "8080"
+        - name: EUREKA_SERVER
+          value: "http://discovery-service:8761/eureka"
+        - name: EUREKA_APP_NAME
+          value: "ai-chat-service"
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         - name: AWS_REGION
           value: "us-east-1"
         # AWS 자격 증명은 Secret에서 가져옵니다
@@ -40,6 +54,24 @@ spec:
             secretKeyRef:
               name: aws-credentials
               key: AWS_SECRET_ACCESS_KEY
+        # MongoDB 연결 설정
+        - name: MONGO_HOST
+          value: "host.docker.internal"
+        - name: MONGO_PORT
+          value: "27017"
+        - name: MONGO_DB_NAME
+          value: "jiwon"
+        # MongoDB 인증 (필요한 경우 주석 해제하고 Secret에서 가져오도록 설정)
+        # - name: MONGO_USER
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: mongodb-credentials
+        #       key: MONGO_USER
+        # - name: MONGO_PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: mongodb-credentials
+        #       key: MONGO_PASSWORD
         resources:
           requests:
             memory: "256Mi"
@@ -50,13 +82,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
           initialDelaySeconds: 10
           periodSeconds: 5
 

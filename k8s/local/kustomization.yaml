@@ -5,5 +5,5 @@ resources:
   - namespace.yaml
   - secrets-local.yaml
   - ai-chat-service.yaml
-  - ai-vision-service.yaml
+  - ai-judge-service.yaml
 

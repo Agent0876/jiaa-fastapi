@@ -4,11 +4,11 @@ from app.api.v1.endpoints import chat, sessions, roadmaps
 
 api_router = APIRouter()
 
-# chat.py has defined routes with absolute paths (e.g. /chat, /ws/chat) to maintain consistency with legacy structure.
-api_router.include_router(chat.router, tags=["chat"])
+# chat.py routes with /chat prefix
+api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 
-# sessions.py has explicit paths (e.g. /personalities, /sessions)
+# sessions.py routes
 api_router.include_router(sessions.router, tags=["sessions"])
 
-# roadmaps.py has relative paths corresponding to the /roadmaps resource.
+# roadmaps.py routes with /roadmaps prefix
 api_router.include_router(roadmaps.router, prefix="/roadmaps", tags=["roadmaps"])

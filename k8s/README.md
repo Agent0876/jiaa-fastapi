@@ -9,9 +9,13 @@ k8s/
 ├── ai-chat-service/
 │   ├── deployment.yaml    # Deployment 매니페스트
 │   └── service.yaml       # Service 매니페스트
-└── ai-vision-service/
-    ├── deployment.yaml    # Deployment 매니페스트
-    └── service.yaml       # Service 매니페스트
+├── ai-judge-service/
+│   ├── deployment.yaml    # Deployment 매니페스트
+│   └── service.yaml       # Service 매니페스트
+└── local/
+    ├── ai-chat-service.yaml
+    ├── ai-judge-service.yaml
+    └── kustomization.yaml
 ```
 
 ## 파일 설명
