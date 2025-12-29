@@ -14,6 +14,8 @@ from app.core.prompts import (
 )
 from app.services.bedrock import bedrock_runtime
 from app.db.mongodb import get_collection
+import httpx
+import os
 
 
 def parse_roadmap_json(text: str) -> Optional[Dict]:
@@ -564,6 +566,13 @@ async def save_roadmap(roadmap_data: Dict, session_id: str, user_id: Optional[st
         result = await roadmaps.insert_one(roadmap_doc)
         
         roadmap_doc["_id"] = str(result.inserted_id)
+        
+        # 로드맵 저장 후 키워드 추출 및 통계 업데이트
+        try:
+            await extract_and_save_keywords(roadmap_doc, user_id)
+        except Exception as e:
+            print(f"⚠️ 키워드 추출 실패 (로드맵은 저장됨): {e}")
+        
         return roadmap_doc
         
     except Exception as e:
@@ -571,3 +580,137 @@ async def save_roadmap(roadmap_data: Dict, session_id: str, user_id: Optional[st
         import traceback
         traceback.print_exc()
         return None
+
+
+async def extract_keywords_from_roadmap(roadmap_data: Dict) -> List[str]:
+    """로드맵에서 AI를 사용하여 키워드 추출 (코딩, 운동, 수학 등)"""
+    try:
+        # 로드맵 이름과 모든 태스크 내용을 수집
+        roadmap_name = roadmap_data.get("name", "")
+        all_content = [roadmap_name]
+        
+        for item in roadmap_data.get("items", []):
+            # 새 구조 (tasks 배열)
+            if item.get("tasks"):
+                for task in item.get("tasks", []):
+                    if task.get("content"):
+                        all_content.append(task.get("content"))
+            # 레거시 구조
+            elif item.get("content"):
+                all_content.append(item.get("content"))
+        
+        # 전체 텍스트 조합
+        full_text = "\n".join(all_content)
+        
+        if not full_text.strip():
+            return []
+        
+        # AI 프롬프트 구성
+        prompt = f"""다음 로드맵 내용을 분석하여 학습 분야 키워드를 추출해주세요.
+
+로드맵 내용:
+{full_text}
+
+위 로드맵의 주요 학습 분야를 나타내는 키워드를 추출해주세요. 예를 들어:
+- 코딩, 프로그래밍, 개발
+- 운동, 피트니스, 헬스
+- 수학, 미적분, 통계
+- 영어, 언어학습
+- 디자인, UI/UX
+- 음악, 악기
+등의 카테고리 키워드를 추출해주세요.
+
+JSON 형식으로만 응답해주세요:
+{{
+  "keywords": ["키워드1", "키워드2", "키워드3", ...]
+}}
+
+키워드는 최대 10개까지 추출하고, 가장 관련성이 높은 것부터 나열해주세요."""
+        
+        model_id = settings.ROADMAP_MODEL_ID
+        
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 500,
+            "temperature": 0.3,
+            "system": "당신은 로드맵 내용을 분석하여 학습 분야 키워드를 추출하는 AI입니다. JSON만 출력합니다.",
+            "messages": [{
+                "role": "user",
+                "content": prompt
+            }]
+        })
+        
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: bedrock_runtime.invoke_model(modelId=model_id, body=body)
+        )
+        
+        response_body = json.loads(response.get("body").read())
+        response_text = response_body.get("content", [])[0].get("text", "")
+        
+        # JSON 파싱
+        json_match = re.search(r'\{[\s\S]*"keywords"[\s\S]*\}', response_text)
+        if json_match:
+            json_str = json_match.group(0)
+            # JSON 정리
+            json_str_clean = re.sub(r'```json\s*', '', json_str)
+            json_str_clean = re.sub(r'```\s*', '', json_str_clean)
+            try:
+                data = json.loads(json_str_clean)
+                keywords = data.get("keywords", [])
+                return keywords[:10]  # 최대 10개
+            except json.JSONDecodeError:
+                pass
+        
+        return []
+        
+    except Exception as e:
+        print(f"⚠️ 키워드 추출 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+async def save_keywords_to_backend(user_id: Optional[str], keywords: List[str]):
+    """추출한 키워드를 Java 백엔드에 전달하여 DashboardStat에 저장"""
+    try:
+        # Java 백엔드 URL (환경변수 또는 기본값)
+        backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+        # analysis-service는 gateway를 통해 접근하거나 직접 접근
+        api_url = f"{backend_url}/api/analysis/stats/keywords"
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                api_url,
+                json={
+                    "userId": user_id,
+                    "keywords": keywords
+                },
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                print(f"✅ 키워드 저장 성공: {keywords}")
+            else:
+                print(f"⚠️ 키워드 저장 실패: {response.status_code} - {response.text}")
+                
+    except Exception as e:
+        print(f"⚠️ 백엔드 키워드 저장 오류: {e}")
+
+
+async def extract_and_save_keywords(roadmap_doc: Dict, user_id: Optional[str]):
+    """로드맵에서 키워드 추출하고 백엔드에 저장"""
+    try:
+        keywords = await extract_keywords_from_roadmap(roadmap_doc)
+        
+        if keywords:
+            # 각 키워드에 대해 통계 업데이트 (값은 1씩 증가)
+            await save_keywords_to_backend(user_id, keywords)
+        else:
+            print("ℹ️ 추출된 키워드가 없습니다.")
+            
+    except Exception as e:
+        print(f"⚠️ 키워드 추출 및 저장 오류: {e}")
+        import traceback
+        traceback.print_exc()
