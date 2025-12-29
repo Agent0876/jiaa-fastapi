@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kaniko-build-ai-judge-service
+  namespace: jiaa-backend
+spec:
+  ttlSecondsAfterFinished: 3600  # 1시간 후 자동 삭제
+  template:
+    spec:
+      serviceAccountName: kaniko-sa  # Kaniko용 ServiceAccount 필요
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+        - --dockerfile=jiaa-fastapi/ai-judge-service/Dockerfile
+        - --context=dir:///workspace
+        - --destination=541673202749.dkr.ecr.ap-northeast-2.amazonaws.com/jiaa/ai-judge-service:${BUILD_NUMBER}
+        - --destination=541673202749.dkr.ecr.ap-northeast-2.amazonaws.com/jiaa/ai-judge-service:latest
+        - --cache=true
+        - --cache-ttl=24h
+        - --snapshot-mode=redo
+        env:
+        - name: AWS_REGION
+          value: "ap-northeast-2"
+        - name: BUILD_NUMBER
+          value: "1"  # Jenkins에서 주입
+        volumeMounts:
+        - name: kaniko-secret
+          mountPath: /kaniko/.docker
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      restartPolicy: Never
+      volumes:
+      - name: kaniko-secret
+        secret:
+          secretName: kaniko-docker-config  # ECR 인증 정보
+

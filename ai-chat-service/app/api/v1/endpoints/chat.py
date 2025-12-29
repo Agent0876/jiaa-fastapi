@@ -27,14 +27,14 @@ from app.services.roadmap import (
     save_roadmap,
     generate_day_details
 )
-from app.models.chat import ChatRequest, ChatResponse, SearchRequest
+from app.models.chat import ChatRequest, ChatResponse, SearchRequest, SaveMessageRequest
 from app.models.roadmap import StartRoadmapRequest
 from app.api.deps import get_user_id_from_token
 
 router = APIRouter()
 active_connections: Dict[str, WebSocket] = {}
 
-@router.post("/chat/roadmap/start")
+@router.post("/roadmap/start")
 async def start_roadmap(request: StartRoadmapRequest):
     """로드맵 생성 모드 시작"""
     try:
@@ -74,7 +74,7 @@ async def start_roadmap(request: StartRoadmapRequest):
         raise HTTPException(status_code=500, detail=f"로드맵 모드 시작 중 오류 발생: {str(e)}")
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest, 
     user_id_from_token: Optional[str] = Depends(get_user_id_from_token)
@@ -304,7 +304,7 @@ async def chat(
         )
 
 
-@router.post("/chat/clear")
+@router.post("/clear")
 async def clear_history(session_id: str):
     """특정 세션의 대화 히스토리 삭제"""
     try:
@@ -319,7 +319,7 @@ async def clear_history(session_id: str):
         raise HTTPException(status_code=500, detail=f"히스토리 삭제 중 오류 발생: {str(e)}")
 
 
-@router.post("/chat/search")
+@router.post("/search")
 async def search_conversations(request: SearchRequest):
     """벡터 검색을 사용한 대화 메시지 검색"""
     try:
@@ -338,7 +338,49 @@ async def search_conversations(request: SearchRequest):
         raise HTTPException(status_code=500, detail=f"검색 중 오류 발생: {str(e)}")
 
 
-@router.websocket("/ws/chat")
+@router.get("/sessions/{session_id}/messages")
+async def get_session_messages(
+    session_id: str,
+    limit: int = 100,
+    user_id: Optional[str] = Depends(get_user_id_from_token)
+):
+    """세션별 메시지 목록 조회"""
+    try:
+        messages = await get_conversation_messages(session_id, limit=limit)
+        return {
+            "session_id": session_id,
+            "messages": messages,
+            "count": len(messages)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"메시지 조회 중 오류 발생: {str(e)}")
+
+
+@router.post("/sessions/{session_id}/messages")
+async def save_session_message(
+    session_id: str,
+    request: SaveMessageRequest,
+    user_id: Optional[str] = Depends(get_user_id_from_token)
+):
+    """세션에 메시지 저장"""
+    try:
+        result = await save_conversation_message(
+            session_id=session_id,
+            role=request.role,
+            content=request.content,
+            user_id=user_id
+        )
+        if result:
+            return result
+        else:
+            raise HTTPException(status_code=500, detail="메시지 저장 실패")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"메시지 저장 중 오류 발생: {str(e)}")
+
+
+@router.websocket("/ws")
 async def websocket_chat(websocket: WebSocket):
     """WebSocket 기반 채팅 엔드포인트"""
     await websocket.accept()

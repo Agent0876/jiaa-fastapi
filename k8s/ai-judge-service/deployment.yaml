@@ -1,34 +1,50 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: jiaa-ai-vision-service
+  name: jiaa-ai-judge-service
   labels:
-    app: jiaa-ai-vision-service
-    service: ai-vision-service
+    app: jiaa-ai-judge-service
+    service: ai-judge-service
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: jiaa-ai-vision-service
+      app: jiaa-ai-judge-service
   template:
     metadata:
       labels:
-        app: jiaa-ai-vision-service
-        service: ai-vision-service
+        app: jiaa-ai-judge-service
+        service: ai-judge-service
     spec:
       containers:
-      - name: ai-vision-service
-        image: jiaa-ai-vision-service:local
+      - name: ai-judge-service
+        image: jiaa-ai-judge-service:local
         imagePullPolicy: Never
         ports:
-        - containerPort: 8000
+        - containerPort: 8080
           name: http
           protocol: TCP
         env:
         - name: ENV
           value: "local"
+        - name: PORT
+          value: "8080"
+        - name: EUREKA_SERVER
+          value: "http://discovery-service:8761/eureka"
+        - name: EUREKA_APP_NAME
+          value: "ai-judge-service"
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         - name: AWS_REGION
           value: "us-east-1"
+        - name: DEFAULT_MODEL_ID
+          value: "anthropic.claude-3-haiku-20240307-v1:0"
         # AWS 자격 증명은 Secret에서 가져옵니다
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
@@ -42,21 +58,21 @@ spec:
               key: AWS_SECRET_ACCESS_KEY
         resources:
           requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
             memory: "512Mi"
             cpu: "500m"
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
         livenessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8080
           initialDelaySeconds: 10
           periodSeconds: 5
 

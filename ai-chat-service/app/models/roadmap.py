@@ -1,5 +1,5 @@
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
 class StartRoadmapRequest(BaseModel):
@@ -14,7 +14,7 @@ class RoadmapResponse(BaseModel):
     session_id: Optional[str] = None
     created_at: str
     updated_at: str
-    items: List[Dict]
+    items: List[Dict[str, Any]]
 
 
 class UpdateRoadmapItemRequest(BaseModel):

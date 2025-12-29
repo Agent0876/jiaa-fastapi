@@ -4,7 +4,7 @@ set -e
 
 # AWS 자격 증명 Secret 생성 스크립트
 
-NAMESPACE=${1:-jiwon-tech}
+NAMESPACE=${1:-jiaa-backend}
 SECRET_NAME="aws-credentials"
 
 echo "🔐 AWS 자격 증명 Secret 생성 스크립트"

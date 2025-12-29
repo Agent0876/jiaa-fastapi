@@ -1,22 +1,13 @@
 #!/bin/bash
 
-# ai-chat-service 포트포워딩 (기본)
-SERVICE=${1:-ai-chat-service}
-LOCAL_PORT=${2:-8000}
+# 포트 포워딩은 게이트웨이를 통해 접근하므로 더 이상 필요하지 않습니다.
+# 게이트웨이를 통해 접근: http://localhost:8080/api/v1/chat/**, /api/v1/judge/**
 
-if [ "$SERVICE" = "ai-chat-service" ]; then
-    SERVICE_NAME="jiaa-ai-chat-service-svc"
-    PORT=8000
-elif [ "$SERVICE" = "ai-vision-service" ]; then
-    SERVICE_NAME="jiaa-ai-vision-service-svc"
-    PORT=8000
-else
-    echo "❌ 지원하지 않는 서비스입니다: $SERVICE"
-    exit 1
-fi
-
-echo "🌐 Port forwarding $SERVICE to localhost:$LOCAL_PORT..."
+echo "⚠️  포트 포워딩이 제거되었습니다."
 echo ""
-echo "Press Ctrl+C to stop"
-
-kubectl port-forward svc/$SERVICE_NAME $LOCAL_PORT:$PORT -n jiwon-tech
+echo "게이트웨이를 통해 접근하세요:"
+echo "  - AI Chat Service: http://localhost:8080/api/v1/chat/**"
+echo "  - AI Judge Service: http://localhost:8080/api/v1/judge/**"
+echo ""
+echo "게이트웨이 포트 포워딩:"
+echo "  kubectl port-forward svc/jiaa-gateway-service-svc 8080:8080 -n jiaa-backend"

@@ -1,0 +1,112 @@
+pipeline {
+    agent any
+    
+    parameters {
+        choice(name: 'SERVICE_NAME', 
+               choices: ['ai-judge-service', 'ai-chat-service', 'all'], 
+               description: '빌드할 서비스를 선택하세요')
+    }
+    
+    environment {
+        ECR_REGISTRY = '541673202749.dkr.ecr.ap-northeast-2.amazonaws.com'
+        AWS_REGION = 'ap-northeast-2'
+        K8S_NAMESPACE = 'jiaa-backend'
+        KANIKO_SA = 'kaniko-sa'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Setup Kaniko') {
+            steps {
+                dir('jiaa-fastapi') {
+                    // ServiceAccount 및 RBAC 설정
+                    sh 'kubectl apply -f k8s/kaniko-serviceaccount.yaml || true'
+                    
+                    // ECR 인증 Secret 생성
+                    sh '''
+                        chmod +x scripts/create-kaniko-secret.sh
+                        ./scripts/create-kaniko-secret.sh || true
+                    '''
+                }
+            }
+        }
+        
+        stage('Build with Kaniko') {
+            parallel {
+                stage('Build ai-judge-service') {
+                    when {
+                        anyOf {
+                            params.SERVICE_NAME == 'all'
+                            params.SERVICE_NAME == 'ai-judge-service'
+                        }
+                    }
+                    steps {
+                        dir('jiaa-fastapi') {
+                            sh """
+                                ./scripts/build-with-kaniko.sh ai-judge-service \${BUILD_NUMBER}
+                            """
+                        }
+                    }
+                }
+                
+                stage('Build ai-chat-service') {
+                    when {
+                        anyOf {
+                            params.SERVICE_NAME == 'all'
+                            params.SERVICE_NAME == 'ai-chat-service'
+                        }
+                    }
+                    steps {
+                        dir('jiaa-fastapi') {
+                            sh """
+                                ./scripts/build-with-kaniko.sh ai-chat-service \${BUILD_NUMBER}
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Update Deployments') {
+            steps {
+                script {
+                    def services = []
+                    if (params.SERVICE_NAME == 'all') {
+                        services = ['ai-judge-service', 'ai-chat-service']
+                    } else {
+                        services = [params.SERVICE_NAME]
+                    }
+                    
+                    services.each { service ->
+                        sh """
+                            kubectl set image deployment/jiaa-${service} \
+                                ${service}=${ECR_REGISTRY}/jiaa/${service}:\${BUILD_NUMBER} \
+                                -n ${K8S_NAMESPACE} || true
+                        """
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "✅ Kaniko build completed successfully!"
+            echo "📦 Images pushed to: ${ECR_REGISTRY}/jiaa/*:${BUILD_NUMBER}"
+        }
+        failure {
+            echo "❌ Kaniko build failed!"
+        }
+        always {
+            // 실패한 Job 정리
+            sh '''
+                kubectl delete job -l app=kaniko-build -n jiaa-backend --field-selector status.successful!=1 || true
+            '''
+        }
+    }
+}
