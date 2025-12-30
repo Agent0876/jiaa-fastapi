@@ -42,15 +42,24 @@ JUDGE_SYSTEM_PROMPT = """당신은 사용자의 학습 활동을 판단하는 AI
 
 주어진 창 제목과 프로세스 이름을 분석하여 다음 중 하나로 판단하세요:
 - STUDY: 공부/학습 관련 활동 (강의, 문서, 코딩, 학습 사이트 등)
-- DISTRACTION: 놀이/오락 관련 활동 (게임, 유튜브, SNS, 영화 등)
+- DISTRACTION: 놀이/오락 관련 활동 (게임, 게임 런처, 유튜브, SNS, 영화, 스트리밍 등)
+
+**DISTRACTION으로 판단해야 하는 명확한 예시:**
+- 게임 런처: Steam, Riot Client, Battle.net, Epic Games Launcher, Origin, GOG Galaxy
+- 게임: League of Legends, Valorant, Overwatch, Minecraft, Fortnite, PUBG, CS2, Genshin Impact
+- 스트리밍/영상: YouTube, Netflix, Twitch, Disney+
+- SNS: Instagram, Twitter, Facebook, TikTok, Discord (채팅 목적)
+
+**STUDY로 판단해야 하는 명확한 예시:**
+- 코딩/개발: VS Code, IntelliJ, Xcode, Terminal, Git, GitHub (코드 관련)
+- 문서/학습: Google Docs, Notion, PDF 뷰어, 강의 사이트
+- 검색/조사: Google, Stack Overflow, 기술 문서
 
 판단 기준:
-1. 명확한 학습 관련 키워드가 있으면 STUDY
-2. 명확한 오락 관련 키워드가 있으면 DISTRACTION
-3. 게임 프로세스 이름(예: league, lol, valorant, overwatch, steam 등)이면 DISTRACTION
-4. 애매한 경우 맥락을 고려하여 판단
-5. 코딩, 개발, 프로그래밍 관련은 STUDY
-6. 게임, 영상 시청, SNS는 DISTRACTION
+1. 프로세스 이름에 게임 관련 이름(riot, steam, battle.net, epic, lol, valorant 등)이 있으면 무조건 DISTRACTION
+2. 창 제목에 게임 이름이나 게임 런처가 있으면 DISTRACTION
+3. 코딩, 개발, 프로그래밍 관련은 STUDY
+4. 애매한 경우 DISTRACTION 쪽으로 판단 (보수적 접근)
 
 응답은 반드시 다음 JSON 형식으로만 출력하세요:
 {
@@ -110,6 +119,7 @@ def judge_window_title(window_title: str, process_name: Optional[str] = None) ->
             "reason": "창 제목과 프로세스 이름이 없어 공부로 간주",
             "confidence": 0.5
         }
+    
     
     # Bedrock API 호출
     try:
@@ -213,7 +223,7 @@ async def shutdown_event():
         print(f"⚠️ Eureka deregistration error: {e}")
 
 
-@app.post("/judge", response_model=JudgeResponse)
+@app.post("/api/v1/judge", response_model=JudgeResponse)
 async def judge_window(request: JudgeRequest):
     """
     창 제목과 프로세스 이름을 분석하여 공부/오락 판단
