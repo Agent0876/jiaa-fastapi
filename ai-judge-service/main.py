@@ -223,7 +223,7 @@ async def shutdown_event():
         print(f"⚠️ Eureka deregistration error: {e}")
 
 
-@app.post("/api/v1/judge", response_model=JudgeResponse)
+@app.post("/judge", response_model=JudgeResponse)
 async def judge_window(request: JudgeRequest):
     """
     창 제목과 프로세스 이름을 분석하여 공부/오락 판단

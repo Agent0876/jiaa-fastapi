@@ -79,8 +79,8 @@ def read_root():
 def health_check():
     return {"status": "healthy"}
 
-# Include API Router containing all V1 endpoints with /api/v1 prefix
-app.include_router(api_router, prefix="/api/v1")
+# Include API Router - Gateway handles /api/ prefix via rewritePath
+app.include_router(api_router)
 
 @app.on_event("shutdown")
 async def shutdown_event():

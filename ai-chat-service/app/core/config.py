@@ -2,9 +2,27 @@ import os
 from typing import Optional
 
 class Settings:
+    # Load .env file manually if exists (to avoid adding python-dotenv dependency)
+    try:
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        env_file = os.path.join(root_dir, ".env")
+        if os.path.exists(env_file):
+            print(f"Loading .env from {env_file}")
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    key, value = line.split("=", 1)
+                    if key not in os.environ:
+                        os.environ[key] = value
+    except Exception as e:
+        print(f"Warning: Failed to load .env file: {e}")
+
     # API Settings
-    API_V1_STR: str = "/api/v1"
+    API_V1_STR: str = ""  # Gateway handles /api/ prefix
     PROJECT_NAME: str = "AI Chat Service"
+    USER_SERVICE_URL: str = os.getenv("USER_SERVICE_URL", "http://user-service:8080")
     
     # MongoDB
     MONGO_HOST: str = os.getenv("MONGO_HOST", "localhost")

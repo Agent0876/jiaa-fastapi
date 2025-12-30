@@ -140,6 +140,11 @@ async def chat(
         if request.message.startswith("[오늘 로드맵 질문]"):
             system_prompt = ROADMAP_QA_SYSTEM_PROMPT
         else:
+            # HTTP 요청 시 Authorization 헤더에서 토큰 추출 (get_user_id_from_token Depends가 이미 토큰을 가질 수 있음)
+            # 하지만 get_user_id_from_token는 ID만 반환하므로, 원본 토큰이 필요함
+            # 여기서는 request 객체에 토큰이 없으므로, Depends로 토큰 자체를 가져오도록 수정하거나 
+            # 단순화를 위해 user-service 호출 시 user_id를 identifier로 사용하는 API를 고려할 수 있음
+            # 일단은 system_prompt 호출부에 token=None으로 두고, WebSocket에서 주로 처리
             system_prompt = await get_system_prompt(session_id, rag_context=rag_context)
         
         messages = []
@@ -467,7 +472,7 @@ async def websocket_chat(websocket: WebSocket):
                 if message.startswith("[오늘 로드맵 질문]"):
                     system_prompt = ROADMAP_QA_SYSTEM_PROMPT
                 else:
-                    system_prompt = await get_system_prompt(session_id, rag_context=rag_context)
+                    system_prompt = await get_system_prompt(session_id, rag_context=rag_context, token=token)
                 
                 messages = []
                 if request_data.get("conversation_history"):

@@ -367,7 +367,10 @@ async def get_rag_context(query: str, session_id: str, user_id: Optional[str] = 
         return ""
 
 
-async def get_system_prompt(session_id: str, rag_context: str = "") -> str:
+import httpx
+from app.core.config import settings
+
+async def get_system_prompt(session_id: str, rag_context: str = "", token: Optional[str] = None) -> str:
     """세션에 맞는 시스템 프롬프트 가져오기"""
     config = await get_session_config(session_id)
     
@@ -378,16 +381,42 @@ async def get_system_prompt(session_id: str, rag_context: str = "") -> str:
     if config and config.get("mode") == "qa":
         return ROADMAP_QA_SYSTEM_PROMPT
 
-    # 성격이 선택된 경우
     base_prompt = None
-    if config and config.get("personality_id"):
+    user_id = config.get("user_id") if config else None
+
+    # User Service에서 사용자의 페르소나 정보를 가져옴
+    if token:
+        try:
+            async with httpx.AsyncClient() as client:
+                # user-service의 /api/users/me 엔드포인트 호출
+                headers = {"Authorization": f"Bearer {token}"}
+                response = await client.get(
+                    f"{settings.USER_SERVICE_URL}/api/users/me",
+                    headers=headers,
+                    timeout=5.0
+                )
+                
+                if response.status_code == 200:
+                    user_info = response.json()
+                    # UserResponse DTO 구조: { "data": { "personality": { "systemPrompt": "..." } } }
+                    data = user_info.get("data", {})
+                    personality = data.get("personality")
+                    if personality and personality.get("systemPrompt"):
+                        base_prompt = personality.get("systemPrompt")
+                        print(f"✅ User Service에서 페르소나를 가져왔습니다: {personality.get('name')}")
+        except Exception as e:
+            print(f"⚠️ User Service 호출 실패: {e}")
+
+    # 성격이 선택된 경우 (MongoDB fallback - 마이그레이션 과도기)
+    if not base_prompt and config and config.get("personality_id"):
         personalities = await get_collection("personalities")
         personality = await personalities.find_one({"_id": config["personality_id"]})
         if personality:
             base_prompt = personality.get("system_prompt")
     
-    # 기본값: 베타인 (첫 번째 성격)
+    # 기본값: 베타인
     if not base_prompt:
+        # MongoDB에서 가져오기 (마이그레이션 전까지 유지)
         personalities = await get_collection("personalities")
         default_personality = await personalities.find_one({"name": "베타인"})
         if default_personality:
